@@ -67,9 +67,8 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
      * @param json the Json (de)serializer to use
      * @param <T> the type of messages to use
      * @return a new instance of this class to use as a server
-     * @throws IOException not sure when ?
      */
-    public static <T> ChatServer<T> initEmptyChat(int socketPort, Gson json) throws IOException {
+    public static <T> ChatServer<T> initEmptyChat(int socketPort, Gson json) {
 
         // instantiate a new instance of this class with an empty model.
         final ChatServer<T> server = new ChatServer<>(
@@ -78,17 +77,13 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
                 json);
 
         // open a dedicated thread to manage the socket for notifications.
-        final Thread socketThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    server.openSocket(socketPort);
-                } catch (IOException e) {
-                    throw new RuntimeException("Unable to open new socket on port " + socketPort, e);
-                }
+        server.socketThread = new Thread(() -> {
+            try {
+                server.openSocket(socketPort);
+            } catch (IOException e) {
+                throw new RuntimeException("Unable to open new socket on port " + socketPort, e);
             }
         });
-        server.socketThread = socketThread;
 
         //TODO: I should start the socket thread here
 
@@ -108,7 +103,7 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
         try (ServerSocket serverSocket = new ServerSocket(port)) {
 
             // loop forever to accept all new clients
-            while(true) {
+            while(!serverSocket.isClosed()) {
 
                 // Socket.accept() is blocking - wait for a new client
                 final Socket client = serverSocket.accept();
@@ -197,36 +192,18 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
      */
     public Optional<UserAccount> findUser(String userName) {
         // Test code
-        if (userName.equals("testUser")) {
+       /* if (userName.equals("testUser")) {
             return Optional.of(new UserAccount(0, userName));
         } else {
             return Optional.empty();
-        }
+        }*/
         // Real code
-        /*
+
         return chatInstance.getUsers().keySet().stream()
                 .map(UserInfo::getAccount)
                 .filter(account -> account.getUsername().equals(userName))
                 .findAny();
-        */
-    }
 
-    /**
-     * Gets the list of users in the model with an active status.
-     * @return the list of connected users
-     */
-    public Collection<String> getConnectedUsers() {
-        return Optional.ofNullable(getUsers())
-                // get all users in the model
-                .map(users -> users.parallelStream()
-                        // filter to get only active users
-                        .filter(user -> user.getCurrentStatus() == Status.ACTIVE)
-                        // get username(s) from user models
-                        .map(user -> user.getAccount().getUsername())
-                        // collect results
-                        .collect(Collectors.toSet()))
-                // if getUsers() returns null - return an empty set
-                .orElse(Collections.emptySet());
     }
 
     /**
@@ -278,11 +255,10 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
         final Chatroom<T> newChatroom = new Chatroom<>(chatroomName, owner, new ArrayList<>());
 
         // add it in the model
-        final int newChatroomId = chatInstance.addChatroom(newChatroom);
 
         /* maybe I should notify clients about the new chatroom ?? */
 
-        return newChatroomId;
+        return chatInstance.addChatroom(newChatroom);
     }
 
     /**
@@ -315,10 +291,9 @@ public class ChatServer<T> implements UserAlgo, ChatroomAlgo<T>, MessageAlgo<T>,
      */
     @Override
     public Message<T> addMessage(int chatroomId, UserInfo user, T content) {
-        Message<T> newMessage = getChatroom(chatroomId).addMessage(user, content);
 
         // return new created message
-        return newMessage;
+        return getChatroom(chatroomId).addMessage(user, content);
     }
 
     /**
